@@ -68,12 +68,11 @@ func NewConcreteFuture(func_wrapper func(args ...interface{}) interface{}) *Conc
 
 func (cf *ConcreteFuture) poll(data interface{}) (interface{}, error){
     next, _ := iter.Pull(cf.lazy_iterator)
-    // next, _ := iter.Pull(cf.func_wrapper().(func(func(interface {}) bool)))
-    val, ok := next();
-    if ok {
-      return nil, nil
+    val,  _ := next();
+    if val.(int) < 0 {
+      return true, nil
     }
-    return val, nil
+    return nil, nil
 }
 
 func (cf *ConcreteFuture) then(data func (args ...interface{}) (Future)) Future {
@@ -130,19 +129,6 @@ func (c *CounterFuture) then(data func (args ...interface{}) (Future)) Future {
     }
 }
 
-
-func primeGenerator() iter.Seq[interface{}] {
-  seq := func(yield func(interface{}) bool) {
-    for{
-      if !yield(0) {
-        fmt.Println("breaking")
-        break
-      }
-    }
-  }
-  return seq
-}
-
 func counter(args ...interface{}) interface{}{
   var i = args[0];
   fmt.Println(i);
@@ -157,22 +143,19 @@ func counter(args ...interface{}) interface{}{
 func counter_gen(args ...interface{}) interface{} {
   var i = 0;
   seq := func(yield func(interface{}) bool) {
-    for{
-      fmt.Println(i)
-      i += 1
-      fmt.Printf("Counter @ %d\n", i);
-      if !yield(i) || i > 100{
-        break
-      }
+    i += 1
+    fmt.Printf("Counter @ %d\n", i);
+    if i < 10 {
+      yield(i)
+    } else {
+      yield(-1)
     }
   }
   return seq
 }
 
 func main(){
-  // for x := range counter_gen(0).(func(func(interface {}) bool)){
-  //   fmt.Println(x)
-  // }
+
   var cf = NewConcreteFuture(counter_gen).then(
     func(args ...interface{}) Future {
       fmt.Println("cf 1")
@@ -185,22 +168,22 @@ func main(){
     },
 
   )
-  //
-  // var sf = NewConcreteFuture(counter).then(
-  //   func(args ...interface{}) Future {
-  //     fmt.Println("sf 1")
-  //     return &FutureDone{result:"done"}
-  //   },
-  // ).then(
-  //   func(args ...interface{}) Future {
-  //     fmt.Println("sf 2")
-  //     return &FutureDone{result:"done"}
-  //   },
-  // )
-  //
+
+  var sf = NewConcreteFuture(counter_gen).then(
+    func(args ...interface{}) Future {
+      fmt.Println("sf 1")
+      return &FutureDone{result:"done"}
+    },
+  ).then(
+    func(args ...interface{}) Future {
+      fmt.Println("sf 2")
+      return &FutureDone{result:"done"}
+    },
+  )
+
   scheduler := Scheduler{}
   scheduler.add_future(cf)
-  // scheduler.add_future(sf)
+  scheduler.add_future(sf)
   scheduler.start()
-  //
+
 }
