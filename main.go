@@ -55,12 +55,15 @@ type ConcreteFuture struct {
     func_wrapper func(args ...interface{}) interface{}
 }
 
+func NewConcreteFuture(func_wrapper func(args ...interface{}) interface{}) *ConcreteFuture{
+  return &ConcreteFuture{
+    func_wrapper,
+  }
+}
+
 func (cf *ConcreteFuture) poll(data interface{}) (interface{}, error){
     res := cf.func_wrapper(data)
-    if res == nil{
-      return false, nil
-    }
-    return true, nil
+    return res, nil
 }
 
 func (cf *ConcreteFuture) then(data func (args ...interface{}) (Future)) Future {
@@ -80,55 +83,80 @@ func (s *Scheduler) add_future(f Future) {
 }
 
 func (s *Scheduler) start(){
-  // for {
     for _, future := range s.futures {
-        future.poll(nil)
+        go future.poll(nil)
     }
-  // }
+    fmt.Println("Executed ...")
+    for {
+
+    }
 }
 
 func counter(args ...interface{}) interface{}{
   for i:=0; i< 10; i++{
     fmt.Printf("Counter @ %d\n", i);
   }
-  return nil
+  return true
+}
+
+type CounterFuture struct {
+    start int
+    end   int
+}
+
+func NewCounterFuture(start int, end int) *CounterFuture {
+  return &CounterFuture{
+      start,
+      end,
+  }
+}
+
+func (c *CounterFuture) poll(data interface{}) (interface{}, error) {
+    if c.start < c.end {
+      c.start += 1
+      fmt.Printf("Polling %d \n", c.start)
+      return nil, nil
+    }
+    return c.start, nil
+}
+
+func (c *CounterFuture) then(data func (args ...interface{}) (Future)) Future {
+    return &FutureThen{
+        left: c,
+        right: nil,
+        callback: data,
+    }
 }
 
 func main(){
-  var cf = ConcreteFuture{
-    func_wrapper: counter,
-  }
-  var next = cf.then(
+  var cf = NewConcreteFuture(counter).then(
     func(args ...interface{}) Future {
-      fmt.Println("Calling the callback for next")
+      fmt.Println("cf 1")
       return &FutureDone{result:"done"}
     },
-  )
-  var one_after = next.then(
+  ).then(
     func(args ...interface{}) Future {
-      fmt.Println("Calling the callback for one_after")
+      fmt.Println("cf 2")
       return &FutureDone{result:"done"}
     },
+
   )
-  var sf = ConcreteFuture{
-    func_wrapper: counter,
-  }
-  var nxt = sf.then(
+
+  var sf = NewConcreteFuture(counter).then(
     func(args ...interface{}) Future {
-      fmt.Println("Calling the callback for nxt")
+      fmt.Println("sf 1")
       return &FutureDone{result:"done"}
     },
-  )
-  var ne_after = nxt.then(
+  ).then(
     func(args ...interface{}) Future {
-      fmt.Println("Calling the callback for ne_after")
+      fmt.Println("sf 2")
       return &FutureDone{result:"done"}
     },
   )
 
   scheduler := Scheduler{}
-  scheduler.add_future(one_after)
-  scheduler.add_future(ne_after)
+  scheduler.add_future(cf)
+  scheduler.add_future(sf)
   scheduler.start()
 
 }
