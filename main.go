@@ -2,6 +2,7 @@ package main
 
 import (
   "fmt"
+  "iter"
 )
 
 type Future interface {
@@ -53,17 +54,26 @@ func (f *FutureThen) then(d (func(args ...interface{}) Future)) Future {
 
 type ConcreteFuture struct {
     func_wrapper func(args ...interface{}) interface{}
+    lazy_iterator iter.Seq[interface{}]
 }
 
 func NewConcreteFuture(func_wrapper func(args ...interface{}) interface{}) *ConcreteFuture{
-  return &ConcreteFuture{
+  var cf = &ConcreteFuture{
     func_wrapper,
+    nil,
   }
+  cf.lazy_iterator = cf.func_wrapper().(func(func(interface {}) bool))
+  return cf
 }
 
 func (cf *ConcreteFuture) poll(data interface{}) (interface{}, error){
-    res := cf.func_wrapper(data)
-    return res, nil
+    next, _ := iter.Pull(cf.lazy_iterator)
+    // next, _ := iter.Pull(cf.func_wrapper().(func(func(interface {}) bool)))
+    val, ok := next();
+    if ok {
+      return nil, nil
+    }
+    return val, nil
 }
 
 func (cf *ConcreteFuture) then(data func (args ...interface{}) (Future)) Future {
@@ -83,21 +93,13 @@ func (s *Scheduler) add_future(f Future) {
 }
 
 func (s *Scheduler) start(){
-    for _, future := range s.futures {
-        go future.poll(nil)
-    }
-    fmt.Println("Executed ...")
-    for {
-
+    for{
+      for _, future := range s.futures {
+          future.poll(nil)
+      }
     }
 }
 
-func counter(args ...interface{}) interface{}{
-  for i:=0; i< 10; i++{
-    fmt.Printf("Counter @ %d\n", i);
-  }
-  return true
-}
 
 type CounterFuture struct {
     start int
@@ -128,8 +130,50 @@ func (c *CounterFuture) then(data func (args ...interface{}) (Future)) Future {
     }
 }
 
+
+func primeGenerator() iter.Seq[interface{}] {
+  seq := func(yield func(interface{}) bool) {
+    for{
+      if !yield(0) {
+        fmt.Println("breaking")
+        break
+      }
+    }
+  }
+  return seq
+}
+
+func counter(args ...interface{}) interface{}{
+  var i = args[0];
+  fmt.Println(i);
+  for i:=0; i< 10; i++{
+    fmt.Printf("Counter @ %d\n", i);
+  }
+  return true
+}
+
+// func counter_gen(args ...interface{}) iter.Seq[interface{}] {
+// panic: interface conversion: interface {} is func(func(interface {}) bool), not iter.Seq[interface {}]
+func counter_gen(args ...interface{}) interface{} {
+  var i = 0;
+  seq := func(yield func(interface{}) bool) {
+    for{
+      fmt.Println(i)
+      i += 1
+      fmt.Printf("Counter @ %d\n", i);
+      if !yield(i) || i > 100{
+        break
+      }
+    }
+  }
+  return seq
+}
+
 func main(){
-  var cf = NewConcreteFuture(counter).then(
+  // for x := range counter_gen(0).(func(func(interface {}) bool)){
+  //   fmt.Println(x)
+  // }
+  var cf = NewConcreteFuture(counter_gen).then(
     func(args ...interface{}) Future {
       fmt.Println("cf 1")
       return &FutureDone{result:"done"}
@@ -141,22 +185,22 @@ func main(){
     },
 
   )
-
-  var sf = NewConcreteFuture(counter).then(
-    func(args ...interface{}) Future {
-      fmt.Println("sf 1")
-      return &FutureDone{result:"done"}
-    },
-  ).then(
-    func(args ...interface{}) Future {
-      fmt.Println("sf 2")
-      return &FutureDone{result:"done"}
-    },
-  )
-
+  //
+  // var sf = NewConcreteFuture(counter).then(
+  //   func(args ...interface{}) Future {
+  //     fmt.Println("sf 1")
+  //     return &FutureDone{result:"done"}
+  //   },
+  // ).then(
+  //   func(args ...interface{}) Future {
+  //     fmt.Println("sf 2")
+  //     return &FutureDone{result:"done"}
+  //   },
+  // )
+  //
   scheduler := Scheduler{}
   scheduler.add_future(cf)
-  scheduler.add_future(sf)
+  // scheduler.add_future(sf)
   scheduler.start()
-
+  //
 }
