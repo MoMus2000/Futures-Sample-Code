@@ -22,6 +22,18 @@ func (f *FutureDone) then(func (args ...interface{}) Future) Future {
     panic("Cannot chain an ended Future")
 }
 
+type FutureProgress struct {
+    result interface{}
+}
+
+func (f *FutureProgress) poll(data interface{}) (interface{}, error) {
+    return f.result, nil
+}
+
+func (f *FutureProgress) then(func (args ...interface{}) Future) Future {
+    panic("Cannot chain an ended Future")
+}
+
 type FutureThen struct{
     left     Future
     right    Future
@@ -69,10 +81,15 @@ func NewConcreteFuture(func_wrapper func(args ...interface{}) interface{}) *Conc
 func (cf *ConcreteFuture) poll(data interface{}) (interface{}, error){
     next, _ := iter.Pull(cf.lazy_iterator)
     val,  _ := next();
-    if val.(int) < 0 {
-      return true, nil
+    switch val.(type){
+      case FutureDone:
+        val := val.(FutureDone)
+        return val.result, nil
+      case FutureProgress:
+        return nil, nil
+      default:
+        panic("Should either be a FutureDone Or FutureProgress")
     }
-    return nil, nil
 }
 
 func (cf *ConcreteFuture) then(data func (args ...interface{}) (Future)) Future {
@@ -138,17 +155,15 @@ func counter(args ...interface{}) interface{}{
   return true
 }
 
-// func counter_gen(args ...interface{}) iter.Seq[interface{}] {
-// panic: interface conversion: interface {} is func(func(interface {}) bool), not iter.Seq[interface {}]
 func counter_gen(args ...interface{}) interface{} {
   var i = 0;
-  seq := func(yield func(interface{}) bool) {
+  seq := func(yield func((interface{})) bool) {
     i += 1
     fmt.Printf("Counter @ %d\n", i);
     if i < 10 {
-      yield(i)
+      yield(FutureProgress{result:i})
     } else {
-      yield(-1)
+      yield(FutureDone{result:i})
     }
   }
   return seq
@@ -158,11 +173,13 @@ func main(){
 
   var cf = NewConcreteFuture(counter_gen).then(
     func(args ...interface{}) Future {
+      fmt.Println("Args", args)
       fmt.Println("cf 1")
       return &FutureDone{result:"done"}
     },
   ).then(
     func(args ...interface{}) Future {
+      fmt.Println("Args", args)
       fmt.Println("cf 2")
       return &FutureDone{result:"done"}
     },
@@ -171,11 +188,13 @@ func main(){
 
   var sf = NewConcreteFuture(counter_gen).then(
     func(args ...interface{}) Future {
+      fmt.Println("Args", args)
       fmt.Println("sf 1")
       return &FutureDone{result:"done"}
     },
   ).then(
     func(args ...interface{}) Future {
+      fmt.Println("Args", args)
       fmt.Println("sf 2")
       return &FutureDone{result:"done"}
     },
